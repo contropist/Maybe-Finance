@@ -44,17 +44,30 @@ class Family < ApplicationRecord
   end
 
   def syncing?
-    super || accounts.manual.any?(&:syncing?) || plaid_items.any?(&:syncing?)
+    Sync.where(
+      "(syncable_type = 'Family' AND syncable_id = ?) OR
+       (syncable_type = 'Account' AND syncable_id IN (SELECT id FROM accounts WHERE family_id = ? AND plaid_account_id IS NULL)) OR
+       (syncable_type = 'PlaidItem' AND syncable_id IN (SELECT id FROM plaid_items WHERE family_id = ?))",
+      id, id, id
+    ).where(status: [ "pending", "syncing" ]).exists?
   end
 
-  def get_link_token(webhooks_url:, redirect_url:, accountable_type: nil)
-    return nil unless plaid_provider
+  def eu?
+    country != "US" && country != "CA"
+  end
 
-    plaid_provider.get_link_token(
+  def get_link_token(webhooks_url:, redirect_url:, accountable_type: nil, region: :us)
+    provider = if region.to_sym == :eu
+      self.class.plaid_eu_provider
+    else
+      self.class.plaid_us_provider
+    end
+
+    provider.get_link_token(
       user_id: id,
       webhooks_url: webhooks_url,
       redirect_url: redirect_url,
-      accountable_type: accountable_type
+      accountable_type: accountable_type,
     ).link_token
   end
 
