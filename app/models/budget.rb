@@ -133,10 +133,10 @@ class Budget < ApplicationRecord
   end
 
   # =============================================================================
-  # Budget allocations: How much user has budgeted for all categories combined
+  # Budget allocations: How much user has budgeted for all parent categories combined
   # =============================================================================
   def allocated_spending
-    budget_categories.sum(:budgeted_spending)
+    budget_categories.reject { |bc| bc.subcategory? }.sum(&:budgeted_spending)
   end
 
   def allocated_percent
@@ -150,7 +150,7 @@ class Budget < ApplicationRecord
   end
 
   def allocations_valid?
-    initialized? && available_to_allocate.positive? && allocated_spending > 0
+    initialized? && available_to_allocate >= 0 && allocated_spending > 0
   end
 
   # =============================================================================

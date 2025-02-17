@@ -32,6 +32,11 @@ class Account < ApplicationRecord
 
   accepts_nested_attributes_for :accountable, update_only: true
 
+  def institution_domain
+    return nil unless plaid_account&.plaid_item&.institution_url.present?
+    URI.parse(plaid_account.plaid_item.institution_url).host.gsub(/^www\./, "")
+  end
+
   class << self
     def by_group(period: Period.all, currency: Money.default_currency.iso_code)
       grouped_accounts = { assets: ValueGroup.new("Assets", currency), liabilities: ValueGroup.new("Liabilities", currency) }
@@ -130,10 +135,6 @@ class Account < ApplicationRecord
     DataEnricher.new(self).run
   end
 
-  def enrich_data_later
-    EnrichDataJob.perform_later(self)
-  end
-
   def update_with_sync!(attributes)
     should_update_balance = attributes[:balance] && attributes[:balance].to_d != balance
 
@@ -188,6 +189,8 @@ class Account < ApplicationRecord
       .joins("JOIN accounts inflow_accounts ON inflow_accounts.id = inflow_candidates.account_id")
       .joins("JOIN accounts outflow_accounts ON outflow_accounts.id = outflow_candidates.account_id")
       .where("inflow_accounts.family_id = ? AND outflow_accounts.family_id = ?", self.family_id, self.family_id)
+      .where("inflow_accounts.is_active = true AND inflow_accounts.scheduled_for_deletion = false")
+      .where("outflow_accounts.is_active = true AND outflow_accounts.scheduled_for_deletion = false")
       .where("inflow_candidates.entryable_type = 'Account::Transaction' AND outflow_candidates.entryable_type = 'Account::Transaction'")
       .where(existing_transfers: { id: nil })
       .order("date_diff ASC") # Closest matches first

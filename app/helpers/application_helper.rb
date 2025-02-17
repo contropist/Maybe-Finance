@@ -1,20 +1,6 @@
 module ApplicationHelper
   include Pagy::Frontend
 
-  def date_format_options
-    [
-      [ "DD-MM-YYYY", "%d-%m-%Y" ],
-      [ "DD.MM.YYYY", "%d.%m.%Y" ],
-      [ "MM-DD-YYYY", "%m-%d-%Y" ],
-      [ "YYYY-MM-DD", "%Y-%m-%d" ],
-      [ "DD/MM/YYYY", "%d/%m/%Y" ],
-      [ "YYYY/MM/DD", "%Y/%m/%d" ],
-      [ "MM/DD/YYYY", "%m/%d/%Y" ],
-      [ "D/MM/YYYY", "%e/%m/%Y" ],
-      [ "YYYY.MM.DD", "%Y.%m.%d" ]
-    ]
-  end
-
   def icon(key, size: "md", color: "current")
     render partial: "shared/icon", locals: { key:, size:, color: }
   end
@@ -31,6 +17,10 @@ module ApplicationHelper
 
   def header_title(page_title)
     content_for(:header_title) { page_title }
+  end
+
+  def header_description(page_description)
+    content_for(:header_description) { page_description }
   end
 
   def family_notifications_stream
@@ -86,8 +76,8 @@ module ApplicationHelper
     is_current = current_page?(path) || (request.path.start_with?(path) && path != "/")
 
     classes = [
-      "flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium text-gray-500",
-      (is_current ? "bg-white text-gray-900 shadow-xs border-alpha-black-50" : "hover:bg-gray-100 border-transparent")
+      "flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium text-secondary",
+      (is_current ? "bg-white text-primary shadow-xs border-alpha-black-50" : "hover:bg-gray-100 border-transparent")
     ].compact.join(" ")
 
     link_to path, **options.merge(class: classes), aria: { current: ("page" if current_page?(path)) } do
@@ -116,7 +106,7 @@ module ApplicationHelper
   end
 
   def trend_styles(trend)
-    fallback = { bg_class: "bg-gray-500/5", text_class: "text-gray-500", symbol: "", icon: "minus" }
+    fallback = { bg_class: "bg-gray-500/5", text_class: "text-secondary", symbol: "", icon: "minus" }
     return fallback if trend.nil? || trend.direction.flat?
 
     bg_class, text_class, symbol, icon = case trend.direction
@@ -125,7 +115,7 @@ module ApplicationHelper
     when "down"
       trend.favorable_direction.down? ? [ "bg-green-500/5", "text-green-500", "-", "arrow-down" ] : [ "bg-red-500/5", "text-red-500", "-", "arrow-down" ]
     when "flat"
-      [ "bg-gray-500/5", "text-gray-500", "", "minus" ]
+      [ "bg-gray-500/5", "text-secondary", "", "minus" ]
     else
       raise ArgumentError, "Invalid trend direction: #{trend.direction}"
     end
@@ -164,7 +154,7 @@ module ApplicationHelper
 
   def totals_by_currency(collection:, money_method:, separator: " | ", negate: false)
     collection.group_by(&:currency)
-              .transform_values { |item| negate ? item.sum(&money_method) * -1 : item.sum(&money_method) }
+              .transform_values { |item| calculate_total(item, money_method, negate) }
               .map { |_currency, money| format_money(money) }
               .join(separator)
   end
@@ -177,23 +167,11 @@ module ApplicationHelper
     cookies[:admin] == "true"
   end
 
-  def custom_pagy_url_for(pagy, page, current_path: nil)
-    if current_path.blank?
-      pagy_url_for(pagy, page)
-    else
-      uri = URI.parse(current_path)
-      params = URI.decode_www_form(uri.query || "").to_h
+  private
 
-      # Delete existing page param if it exists
-      params.delete("page")
-      # Add new page param unless it's page 1
-      params["page"] = page unless page == 1
-
-      if params.empty?
-        uri.path
-      else
-        "#{uri.path}?#{URI.encode_www_form(params)}"
-      end
+    def calculate_total(item, money_method, negate)
+      items = item.reject { |i| i.respond_to?(:entryable) && i.entryable.transfer? }
+      total = items.sum(&money_method)
+      negate ? -total : total
     end
-  end
 end

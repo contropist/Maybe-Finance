@@ -67,23 +67,41 @@ class Account::EntryTest < ActiveSupport::TestCase
     assert_equal 0, family.entries.search(params).size
   end
 
-  test "can calculate total spending for a group of transactions" do
+  test "can calculate totals for a group of transactions" do
     family = families(:empty)
     account = family.accounts.create! name: "Test", balance: 0, currency: "USD", accountable: Depository.new
     create_transaction(account: account, amount: 100)
     create_transaction(account: account, amount: 100)
-    create_transaction(account: account, amount: -500) # income, will be ignored
+    create_transaction(account: account, amount: -500)
 
-    assert_equal Money.new(200), family.entries.expense_total("USD")
+    totals = family.entries.stats("USD")
+
+    assert_equal 3, totals.count
+    assert_equal 500, totals.income_total
+    assert_equal 200, totals.expense_total
+    assert_equal "USD", totals.currency
   end
 
-  test "can calculate total income for a group of transactions" do
-    family = families(:empty)
-    account = family.accounts.create! name: "Test", balance: 0, currency: "USD", accountable: Depository.new
-    create_transaction(account: account, amount: -100)
-    create_transaction(account: account, amount: -100)
-    create_transaction(account: account, amount: 500) # income, will be ignored
+  test "active scope only returns entries from active, non-scheduled-for-deletion accounts" do
+    # Create transactions for all account types
+    active_transaction = create_transaction(account: accounts(:depository), name: "Active transaction")
+    inactive_transaction = create_transaction(account: accounts(:credit_card), name: "Inactive transaction")
+    deletion_transaction = create_transaction(account: accounts(:investment), name: "Scheduled for deletion transaction")
 
-    assert_equal Money.new(-200), family.entries.income_total("USD")
+    # Update account statuses
+    accounts(:credit_card).update!(is_active: false)
+    accounts(:investment).update!(scheduled_for_deletion: true)
+
+    # Test the scope
+    active_entries = Account::Entry.active
+
+    # Should include entry from active account
+    assert_includes active_entries, active_transaction
+
+    # Should not include entry from inactive account
+    assert_not_includes active_entries, inactive_transaction
+
+    # Should not include entry from account scheduled for deletion
+    assert_not_includes active_entries, deletion_transaction
   end
 end
