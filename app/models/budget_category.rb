@@ -6,7 +6,7 @@ class BudgetCategory < ApplicationRecord
 
   validates :budget_id, uniqueness: { scope: :category_id }
 
-  monetize :budgeted_spending, :actual_spending, :available_to_spend
+  monetize :budgeted_spending, :available_to_spend, :avg_monthly_expense, :median_monthly_expense, :actual_spending
 
   class Group
     attr_reader :budget_category, :budget_subcategories
@@ -45,12 +45,24 @@ class BudgetCategory < ApplicationRecord
     super || budget.family.categories.uncategorized
   end
 
-  def subcategory?
-    category.parent_id.present?
+  def name
+    category.name
   end
 
   def actual_spending
-    category.month_total(date: budget.start_date)
+    budget.budget_category_actual_spending(self)
+  end
+
+  def avg_monthly_expense
+    budget.category_avg_monthly_expense(category)
+  end
+
+  def median_monthly_expense
+    budget.category_median_monthly_expense(category)
+  end
+
+  def subcategory?
+    category.parent_id.present?
   end
 
   def available_to_spend
@@ -78,5 +90,30 @@ class BudgetCategory < ApplicationRecord
     end
 
     segments
+  end
+
+  def siblings
+    budget.budget_categories.select { |bc| bc.category.parent_id == category.parent_id && bc.id != id }
+  end
+
+  def max_allocation
+    return nil unless subcategory?
+
+    parent_budget = budget.budget_categories.find { |bc| bc.category.id == category.parent_id }&.budgeted_spending
+    siblings_budget = siblings.sum(&:budgeted_spending)
+
+    [ parent_budget - siblings_budget, 0 ].max
+  end
+
+  def subcategories
+    return BudgetCategory.none unless category.parent_id.nil?
+
+    budget.budget_categories
+      .joins(:category)
+      .where(categories: { parent_id: category.id })
+  end
+
+  def subcategory?
+    category.parent_id.present?
   end
 end
