@@ -1,4 +1,11 @@
 Rails.application.routes.draw do
+  # MFA routes
+  resource :mfa, controller: "mfa", only: [ :new, :create ] do
+    get :verify
+    post :verify, to: "mfa#verify_code"
+    delete :disable
+  end
+
   mount GoodJob::Engine => "good_job"
 
   get "changelog", to: "pages#changelog"
@@ -9,6 +16,7 @@ Rails.application.routes.draw do
   resources :sessions, only: %i[new create destroy]
   resource :password_reset, only: %i[new create edit update]
   resource :password, only: %i[edit update]
+  resource :email_confirmation, only: :new
 
   resources :users, only: %i[update destroy]
 
@@ -20,10 +28,11 @@ Rails.application.routes.draw do
   end
 
   namespace :settings do
-    resource :profile, only: :show
+    resource :profile, only: [ :show, :destroy ]
     resource :preferences, only: :show
     resource :hosting, only: %i[show update]
     resource :billing, only: :show
+    resource :security, only: :show
   end
 
   resource :subscription, only: %i[new show] do
@@ -44,7 +53,7 @@ Rails.application.routes.draw do
     post :bootstrap, on: :collection
   end
 
-  resources :budgets, only: %i[index show edit update create] do
+  resources :budgets, only: %i[index show edit update], param: :month_year do
     get :picker, on: :collection
 
     resources :budget_categories, only: %i[index show update]
@@ -56,6 +65,7 @@ Rails.application.routes.draw do
 
   resources :imports, only: %i[index new show create destroy] do
     post :publish, on: :member
+    put :revert, on: :member
 
     resource :upload, only: %i[show update], module: :import
     resource :configuration, only: %i[show update], module: :import
@@ -68,21 +78,20 @@ Rails.application.routes.draw do
 
   resources :accounts, only: %i[index new] do
     collection do
-      get :summary
-      get :list
       post :sync_all
     end
 
     member do
       post :sync
       get :chart
+      get :sparkline
     end
   end
 
+  resources :accountable_sparklines, only: :show, param: :accountable_type
+
   namespace :account do
     resources :holdings, only: %i[index new show destroy]
-
-    resources :entries, only: :index
 
     resources :transactions, only: %i[show new create update destroy] do
       resource :transfer_match, only: %i[new create]
@@ -109,7 +118,11 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :transactions, only: :index
+  resources :transactions, only: :index do
+    collection do
+      delete :clear_filter
+    end
+  end
 
   # Convenience routes for polymorphic paths
   # Example: account_path(Account.new(accountable: Depository.new)) => /depositories/123
@@ -140,7 +153,7 @@ Rails.application.routes.draw do
     resources :exchange_rate_provider_missings, only: :update
   end
 
-  resources :invitations, only: [ :new, :create ] do
+  resources :invitations, only: [ :new, :create, :destroy ] do
     get :accept, on: :member
   end
 
@@ -166,11 +179,14 @@ Rails.application.routes.draw do
   end
 
   resources :plaid_items, only: %i[create destroy] do
-    post :sync, on: :member
+    member do
+      post :sync
+    end
   end
 
   namespace :webhooks do
     post "plaid"
+    post "plaid_eu"
     post "stripe"
   end
 

@@ -69,19 +69,17 @@ class AccountsTest < ApplicationSystemTestCase
     assert_account_created("OtherLiability")
   end
 
-  test "can sync all accounts on accounts page" do
-    visit accounts_url
-    assert_button "Sync all"
-  end
-
   private
 
     def open_new_account_modal
-      click_link "sidebar-new-account"
+      within "[data-controller='tabs']" do
+        click_button "All"
+        click_link "New account"
+      end
     end
 
     def assert_account_created(accountable_type, &block)
-      click_link humanized_accountable(accountable_type)
+      click_link Accountable.from_type(accountable_type).display_name.singularize
       click_link "Enter account balance" if accountable_type.in?(%w[Depository Investment Crypto Loan CreditCard])
 
       account_name = "[system test] #{accountable_type} Account"
@@ -93,8 +91,10 @@ class AccountsTest < ApplicationSystemTestCase
 
       click_button "Create Account"
 
-      find("details", text: humanized_accountable(accountable_type)).click
-      assert_text account_name
+      within "[data-controller='tabs']" do
+        find("details", text: Accountable.from_type(accountable_type).display_name).click
+        assert_text account_name
+      end
 
       visit accounts_url
       assert_text account_name
@@ -103,7 +103,7 @@ class AccountsTest < ApplicationSystemTestCase
 
       visit account_url(created_account)
 
-      within "header" do
+      within "header:has(button[data-menu-target='button'])" do
         find('button[data-menu-target="button"]').click
         click_on "Edit"
       end
@@ -114,6 +114,6 @@ class AccountsTest < ApplicationSystemTestCase
     end
 
     def humanized_accountable(accountable_type)
-      accountable_type.constantize.model_name.human
+      Accountable.from_type(accountable_type).display_name.singularize
     end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
+ActiveRecord::Schema[7.2].define(version: 2025_02_20_200735) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -18,7 +18,6 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
   # Custom types defined in this database.
   # Note that some types may not work with other database engines. Be careful if changing database.
   create_enum "account_status", ["ok", "syncing", "error"]
-  create_enum "import_status", ["pending", "importing", "complete", "failed"]
 
   create_table "account_balances", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "account_id", null: false
@@ -55,11 +54,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
   create_table "account_holdings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "account_id", null: false
     t.uuid "security_id", null: false
-    t.date "date"
-    t.decimal "qty", precision: 19, scale: 4
-    t.decimal "price", precision: 19, scale: 4
-    t.decimal "amount", precision: 19, scale: 4
-    t.string "currency"
+    t.date "date", null: false
+    t.decimal "qty", precision: 19, scale: 4, null: false
+    t.decimal "price", precision: 19, scale: 4, null: false
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.string "currency", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "security_id", "date", "currency"], name: "idx_on_account_id_security_id_date_currency_234024c8e3", unique: true
@@ -193,7 +192,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.datetime "updated_at", null: false
     t.uuid "parent_id"
     t.string "classification", default: "expense", null: false
-    t.string "lucide_icon"
+    t.string "lucide_icon", default: "shapes", null: false
     t.index ["family_id"], name: "index_categories_on_family_id"
   end
 
@@ -386,12 +385,13 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.text "notes"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "exchange_operating_mic"
     t.index ["import_id"], name: "index_import_rows_on_import_id"
   end
 
   create_table "imports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.jsonb "column_mappings"
-    t.enum "status", default: "pending", enum_type: "import_status"
+    t.string "status"
     t.string "raw_file_str"
     t.string "normalized_csv_str"
     t.datetime "created_at", null: false
@@ -415,6 +415,8 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.string "date_format", default: "%m/%d/%Y"
     t.string "signage_convention", default: "inflows_positive"
     t.string "error"
+    t.string "number_format"
+    t.string "exchange_operating_mic_col_label"
     t.index ["family_id"], name: "index_imports_on_family_id"
   end
 
@@ -516,6 +518,11 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.string "available_products", default: [], array: true
     t.string "billed_products", default: [], array: true
     t.datetime "last_synced_at"
+    t.string "plaid_region", default: "us", null: false
+    t.string "institution_url"
+    t.string "institution_id"
+    t.string "institution_color"
+    t.string "status", default: "good", null: false
     t.index ["family_id"], name: "index_plaid_items_on_family_id"
   end
 
@@ -538,7 +545,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
   end
 
   create_table "securities", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.string "ticker"
+    t.string "ticker", null: false
     t.string "name"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -546,8 +553,10 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.string "exchange_mic"
     t.string "exchange_acronym"
     t.string "logo_url"
+    t.string "exchange_operating_mic"
     t.index ["country_code"], name: "index_securities_on_country_code"
-    t.index ["ticker", "exchange_mic"], name: "index_securities_on_ticker_and_exchange_mic", unique: true
+    t.index ["exchange_operating_mic"], name: "index_securities_on_exchange_operating_mic"
+    t.index ["ticker", "exchange_operating_mic"], name: "index_securities_on_ticker_and_exchange_operating_mic", unique: true
   end
 
   create_table "security_prices", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -569,6 +578,7 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.datetime "updated_at", null: false
     t.uuid "active_impersonator_session_id"
     t.datetime "subscribed_at"
+    t.jsonb "prev_transaction_page_params", default: {}
     t.index ["active_impersonator_session_id"], name: "index_sessions_on_active_impersonator_session_id"
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
@@ -660,8 +670,14 @@ ActiveRecord::Schema[7.2].define(version: 2025_01_24_224316) do
     t.string "role", default: "member", null: false
     t.boolean "active", default: true, null: false
     t.datetime "onboarded_at"
+    t.string "unconfirmed_email"
+    t.string "otp_secret"
+    t.boolean "otp_required", default: false, null: false
+    t.string "otp_backup_codes", default: [], array: true
+    t.boolean "show_sidebar", default: true
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["family_id"], name: "index_users_on_family_id"
+    t.index ["otp_secret"], name: "index_users_on_otp_secret", unique: true, where: "(otp_secret IS NOT NULL)"
   end
 
   create_table "vehicles", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|

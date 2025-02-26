@@ -67,23 +67,21 @@ class Account::EntryTest < ActiveSupport::TestCase
     assert_equal 0, family.entries.search(params).size
   end
 
-  test "can calculate total spending for a group of transactions" do
-    family = families(:empty)
-    account = family.accounts.create! name: "Test", balance: 0, currency: "USD", accountable: Depository.new
-    create_transaction(account: account, amount: 100)
-    create_transaction(account: account, amount: 100)
-    create_transaction(account: account, amount: -500) # income, will be ignored
+  test "active scope only returns entries from active accounts" do
+    # Create transactions for all account types
+    active_transaction = create_transaction(account: accounts(:depository), name: "Active transaction")
+    inactive_transaction = create_transaction(account: accounts(:credit_card), name: "Inactive transaction")
 
-    assert_equal Money.new(200), family.entries.expense_total("USD")
-  end
+    # Update account statuses
+    accounts(:credit_card).update!(is_active: false)
 
-  test "can calculate total income for a group of transactions" do
-    family = families(:empty)
-    account = family.accounts.create! name: "Test", balance: 0, currency: "USD", accountable: Depository.new
-    create_transaction(account: account, amount: -100)
-    create_transaction(account: account, amount: -100)
-    create_transaction(account: account, amount: 500) # income, will be ignored
+    # Test the scope
+    active_entries = Account::Entry.active
 
-    assert_equal Money.new(-200), family.entries.income_total("USD")
+    # Should include entry from active account
+    assert_includes active_entries, active_transaction
+
+    # Should not include entry from inactive account
+    assert_not_includes active_entries, inactive_transaction
   end
 end

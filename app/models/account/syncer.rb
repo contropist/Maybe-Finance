@@ -5,7 +5,7 @@ class Account::Syncer
   end
 
   def run
-    account.auto_match_transfers!
+    account.family.auto_match_transfers!
 
     holdings = sync_holdings
     balances = sync_balances(holdings)
@@ -15,7 +15,7 @@ class Account::Syncer
 
     # Enrich if user opted in or if we're syncing transactions from a Plaid account on the hosted app
     if account.family.data_enrichment_enabled? || (account.plaid_account_id.present? && Rails.application.config.app_mode.hosted?)
-      account.enrich_data_later
+      account.enrich_data
     else
       Rails.logger.info("Data enrichment is disabled, skipping enrichment for account #{account.id}")
     end
@@ -76,29 +76,35 @@ class Account::Syncer
       exchange_rates = ExchangeRate.find_rates(
         from: from_currency,
         to: to_currency,
-        start_date: balances.first.date
+        start_date: balances.min_by(&:date).date
       )
 
       converted_balances = balances.map do |balance|
         exchange_rate = exchange_rates.find { |er| er.date == balance.date }
 
+        next unless exchange_rate.present?
+
         account.balances.build(
           date: balance.date,
           balance: exchange_rate.rate * balance.balance,
           currency: to_currency
-        ) if exchange_rate.present?
-      end
+        )
+      end.compact
 
       converted_holdings = holdings.map do |holding|
         exchange_rate = exchange_rates.find { |er| er.date == holding.date }
 
+        next unless exchange_rate.present?
+
         account.holdings.build(
           security: holding.security,
           date: holding.date,
+          qty: holding.qty,
+          price: exchange_rate.rate * holding.price,
           amount: exchange_rate.rate * holding.amount,
           currency: to_currency
-        ) if exchange_rate.present?
-      end
+        )
+      end.compact
 
       Account.transaction do
         load_balances(converted_balances)

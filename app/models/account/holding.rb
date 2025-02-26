@@ -6,7 +6,8 @@ class Account::Holding < ApplicationRecord
   belongs_to :account
   belongs_to :security
 
-  validates :qty, :currency, presence: true
+  validates :qty, :currency, :date, :price, :amount, presence: true
+  validates :qty, :price, :amount, numericality: { greater_than_or_equal_to: 0 }
 
   scope :chronological, -> { order(:date) }
   scope :for, ->(security) { where(security_id: security).order(:date) }
@@ -52,13 +53,12 @@ class Account::Holding < ApplicationRecord
   end
 
   private
-
     def calculate_trend
       return nil unless amount_money
 
       start_amount = qty * avg_cost
 
-      TimeSeries::Trend.new \
+      Trend.new \
         current: amount_money,
         previous: start_amount
     end

@@ -3,12 +3,17 @@
 <%= styled_form_with model: @import, url: import_configuration_path(@import), scope: :import, method: :patch, class: "space-y-2" do |form| %>
   <div class="flex items-center gap-2">
     <%= form.select :date_col_label, import.csv_headers, { include_blank: "Leave empty", label: "Date" }, required: true %>
-    <%= form.select :date_format, [["DD-MM-YYYY", "%d-%m-%Y"], ["DD.MM.YY", "%d.%m.%y"], ["MM-DD-YYYY", "%m-%d-%Y"], ["YYYY-MM-DD", "%Y-%m-%d"], ["DD/MM/YYYY", "%d/%m/%Y"], ["YYYY/MM/DD", "%Y/%m/%d"], ["MM/DD/YYYY", "%m/%d/%Y"]], label: true, required: true %>
+    <%= form.select :date_format, Family::DATE_FORMATS, { label: t(".date_format_label")}, label: true, required: true %>
   </div>
 
   <div class="flex items-center gap-2">
     <%= form.select :amount_col_label, import.csv_headers, { include_blank: "Leave empty", label: "Amount" }, required: true %>
     <%= form.select :signage_convention, [["Incomes are positive", "inflows_positive"], ["Incomes are negative", "inflows_negative"]], label: true %>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <%= form.select :currency_col_label, import.csv_headers, { include_blank: "Leave empty", label: "Currency" } %>
+    <%= form.select :number_format, Import::NUMBER_FORMATS.keys, { label: "Format", prompt: "Select format" }, required: true %>
   </div>
 
   <%= form.select :account_col_label, import.csv_headers, { include_blank: "Leave empty", label: "Account (optional)" } %>

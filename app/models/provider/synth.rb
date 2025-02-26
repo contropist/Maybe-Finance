@@ -59,7 +59,7 @@ class Provider::Synth
         {
           date: price.dig("date"),
           price: price.dig("close")&.to_f || price.dig("open")&.to_f,
-          currency: price.dig("currency") || "USD"
+          currency: body.dig("currency") || "USD"
         }
       end
     end
@@ -128,11 +128,13 @@ class Provider::Synth
       raw_response: error
   end
 
-  def search_securities(query:, dataset: "limited", country_code:)
+  def search_securities(query:, dataset: "limited", country_code: nil, exchange_operating_mic: nil)
     response = client.get("#{base_url}/tickers/search") do |req|
       req.params["name"] = query
       req.params["dataset"] = dataset
-      req.params["country_code"] = country_code
+      req.params["country_code"] = country_code if country_code.present?
+      req.params["exchange_operating_mic"] = exchange_operating_mic if exchange_operating_mic.present?
+      req.params["limit"] = 25
     end
 
     parsed = JSON.parse(response.body)
@@ -144,6 +146,7 @@ class Provider::Synth
         logo_url: security.dig("logo_url"),
         exchange_acronym: security.dig("exchange", "acronym"),
         exchange_mic: security.dig("exchange", "mic_code"),
+        exchange_operating_mic: security.dig("exchange", "operating_mic_code"),
         country_code: security.dig("exchange", "country_code")
       }
     end
@@ -154,9 +157,10 @@ class Provider::Synth
       raw_response: response
   end
 
-  def fetch_security_info(ticker:, mic_code:)
+  def fetch_security_info(ticker:, mic_code: nil, operating_mic: nil)
     response = client.get("#{base_url}/tickers/#{ticker}") do |req|
-      req.params["mic_code"] = mic_code
+      req.params["mic_code"] = mic_code if mic_code.present?
+      req.params["operating_mic"] = operating_mic if operating_mic.present?
     end
 
     parsed = JSON.parse(response.body)

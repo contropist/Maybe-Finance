@@ -1,6 +1,9 @@
 class PlaidItem < ApplicationRecord
   include Plaidable, Syncable
 
+  enum :plaid_region, { us: "us", eu: "eu" }
+  enum :status, { good: "good", requires_update: "requires_update" }, default: :good
+
   if Rails.application.credentials.active_record_encryption.present?
     encrypts :access_token, deterministic: true
   end
@@ -17,15 +20,17 @@ class PlaidItem < ApplicationRecord
 
   scope :active, -> { where(scheduled_for_deletion: false) }
   scope :ordered, -> { order(created_at: :desc) }
+  scope :needs_update, -> { where(status: :requires_update) }
 
   class << self
-    def create_from_public_token(token, item_name:)
-      response = plaid_provider.exchange_public_token(token)
+    def create_from_public_token(token, item_name:, region:)
+      response = plaid_provider_for_region(region).exchange_public_token(token)
 
       new_plaid_item = create!(
         name: item_name,
         plaid_id: response.item_id,
         access_token: response.access_token,
+        plaid_region: region
       )
 
       new_plaid_item.sync_later
@@ -35,13 +40,35 @@ class PlaidItem < ApplicationRecord
   def sync_data(start_date: nil)
     update!(last_synced_at: Time.current)
 
-    plaid_data = fetch_and_load_plaid_data
-
-    accounts.each do |account|
-      account.sync_data(start_date: start_date)
+    begin
+      plaid_data = fetch_and_load_plaid_data
+      update!(status: :good) if requires_update?
+      plaid_data
+    rescue Plaid::ApiError => e
+      handle_plaid_error(e)
+      raise e
     end
+  end
 
-    plaid_data
+  def get_update_link_token(webhooks_url:, redirect_url:)
+    begin
+      family.get_link_token(
+        webhooks_url: webhooks_url,
+        redirect_url: redirect_url,
+        region: plaid_region,
+        access_token: access_token
+      )
+    rescue Plaid::ApiError => e
+      error_body = JSON.parse(e.response_body)
+
+      if error_body["error_code"] == "ITEM_NOT_FOUND"
+        # Mark the connection as invalid but don't auto-delete
+        update!(status: :requires_update)
+        raise PlaidConnectionLostError
+      else
+        raise e
+      end
+    end
   end
 
   def post_sync
@@ -58,6 +85,20 @@ class PlaidItem < ApplicationRecord
       data = {}
       item = plaid_provider.get_item(access_token).item
       update!(available_products: item.available_products, billed_products: item.billed_products)
+
+      # Fetch and store institution details
+      if item.institution_id.present?
+        begin
+          institution = plaid_provider.get_institution(item.institution_id)
+          update!(
+            institution_id: item.institution_id,
+            institution_url: institution.institution.url,
+            institution_color: institution.institution.primary_color
+          )
+        rescue Plaid::ApiError => e
+          Rails.logger.warn("Error fetching institution details for item #{id}: #{e.message}")
+        end
+      end
 
       fetched_accounts = plaid_provider.get_item_accounts(self).accounts
       data[:accounts] = fetched_accounts || []
@@ -134,4 +175,14 @@ class PlaidItem < ApplicationRecord
     rescue StandardError => e
       Rails.logger.warn("Failed to remove Plaid item #{id}: #{e.message}")
     end
+
+    def handle_plaid_error(error)
+      error_body = JSON.parse(error.response_body)
+
+      if error_body["error_code"] == "ITEM_LOGIN_REQUIRED"
+        update!(status: :requires_update)
+      end
+    end
+
+    class PlaidConnectionLostError < StandardError; end
 end
